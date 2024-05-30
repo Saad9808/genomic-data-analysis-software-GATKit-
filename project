@@ -1,0 +1,207 @@
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+def read_fasta(file_path):
+    """Reads a FASTA file and returns a dictionary with sequence IDs as keys and sequences as values."""
+    sequences = {}
+    with open(file_path, 'r') as file:
+        sequence_id = None
+        sequence_data = []
+
+        for line in file:
+            line = line.strip()
+            if line.startswith('>'):
+                if sequence_id is not None:
+                    sequences[sequence_id] = ''.join(sequence_data)
+                sequence_id = line[1:]  # Remove the '>'
+                sequence_data = []
+            else:
+                sequence_data.append(line)
+        if sequence_id is not None:
+            sequences[sequence_id] = ''.join(sequence_data)
+
+    return sequences
+
+def calculate_gc_content(sequence):
+    """Calculates the GC content of a given DNA sequence."""
+    g_count = sequence.upper().count('G')
+    c_count = sequence.upper().count('C')
+    gc_content = (g_count + c_count) / len(sequence) * 100
+    return gc_content
+
+def find_snvs(sequence1, sequence2):
+    """Finds single nucleotide variants (SNVs) between two DNA sequences."""
+    snvs = []
+    for i, (base1, base2) in enumerate(zip(sequence1, sequence2)):
+        if base1 != base2:
+            snvs.append((i + 1, base1, base2))  # Position is 1-indexed
+    return snvs
+
+def analyze_genome(sequences):
+    """Analyzes a dictionary of sequences and returns a summary of the analysis."""
+    analysis_results = {}
+    for seq_id, sequence in sequences.items():
+        sequence_length = len(sequence)
+        gc_content = calculate_gc_content(sequence)
+
+        analysis_results[seq_id] = {
+            'length': sequence_length,
+            'gc_content': gc_content
+        }
+
+    return analysis_results
+
+def print_analysis(analysis_results):
+    """Prints the results of the genome analysis."""
+    result_text = ""
+    for seq_id, results in analysis_results.items():
+        result_text += f"Sequence ID: {seq_id}\n"
+        result_text += f"  Length: {results['length']} bases\n"
+        result_text += f"  GC Content: {results['gc_content']:.2f}%\n\n"
+    return result_text
+
+def upload_file():
+    file_path = filedialog.askopenfilename(filetypes=[("FASTA files", "*.fna *.fasta"), ("All files", "*.*")])
+    if file_path:
+        sequences = read_fasta(file_path)
+        if not sequences:
+            messagebox.showerror("Error", "No sequences found in the file.")
+            return
+        analysis_results = analyze_genome(sequences)
+        result_text = print_analysis(analysis_results)
+        result_display.configure(state='normal')
+        result_display.delete(1.0, tk.END)
+        result_display.insert(tk.END, result_text)
+        result_display.configure(state='disabled')
+
+def call_variants():
+    sequence1 = sequence1_entry.get()
+    sequence2 = sequence2_entry.get()
+    if sequence1 and sequence2:
+        snvs = find_snvs(sequence1, sequence2)
+        if snvs:
+            snv_text = "Single Nucleotide Variants (SNVs):\n"
+            for snv in snvs:
+                snv_text += f"Position {snv[0]}: {snv[1]} -> {snv[2]}\n"
+            messagebox.showinfo("Variant Calling Results", snv_text)
+        else:
+            messagebox.showinfo("Variant Calling Results", "No variants found.")
+        if evolutionary_history_var.get():
+            analyze_evolutionary_history(sequence1, sequence2)
+    else:
+        messagebox.showerror("Error", "Please enter sequences in both fields.")
+
+def analyze_evolutionary_history(sequence1, sequence2):
+    """Analyzes and provides the evolutionary history of two sequences."""
+    insertions = deletions = substitutions = 0
+    length_diff = abs(len(sequence1) - len(sequence2))
+
+    # Normalize the length of sequences
+    if len(sequence1) > len(sequence2):
+        sequence2 += '-' * length_diff
+        insertions = length_diff
+    elif len(sequence2) > len(sequence1):
+        sequence1 += '-' * length_diff
+        deletions = length_diff
+
+    for base1, base2 in zip(sequence1, sequence2):
+        if base1 != base2:
+            if base1 == '-':
+                insertions += 1
+            elif base2 == '-':
+                deletions += 1
+            else:
+                substitutions += 1
+
+    history_text = (
+        f"Evolutionary History Analysis:\n"
+        f"Insertions: {insertions}\n"
+        f"Deletions: {deletions}\n"
+        f"Substitutions: {substitutions}\n"
+    )
+    messagebox.showinfo("Evolutionary History", history_text)
+
+def upload_and_analyze_evolutionary_history():
+    file_path1 = filedialog.askopenfilename(title="Select First FASTA File", filetypes=[("FASTA files", "*.fna *.fasta"), ("All files", "*.*")])
+    if not file_path1:
+        return
+    file_path2 = filedialog.askopenfilename(title="Select Second FASTA File", filetypes=[("FASTA files", "*.fna *.fasta"), ("All files", "*.*")])
+    if not file_path2:
+        return
+
+    sequences1 = read_fasta(file_path1)
+    sequences2 = read_fasta(file_path2)
+
+    if not sequences1 or not sequences2:
+        messagebox.showerror("Error", "No sequences found in one or both files.")
+        return
+
+    # Assuming the files contain only one sequence each
+    sequence1 = next(iter(sequences1.values()))
+    sequence2 = next(iter(sequences2.values()))
+
+    analyze_evolutionary_history(sequence1, sequence2)
+
+def main():
+    # Create the main window
+    root = tk.Tk()
+    root.title("Genomic Data Analysis")
+    root.geometry("800x500")
+    root.configure(bg="#e0f7fa")
+
+    # Create a style
+    style = ttk.Style()
+    style.configure("TButton", font=("Helvetica", 12), background="#00796b", foreground="#ffffff")
+    style.configure("TLabel", font=("Helvetica", 12), background="#e0f7fa", foreground="#00796b")
+
+    # Create and place widgets
+    title_label = ttk.Label(root, text="Genomic Data Analysis Tool", style="TLabel")
+    title_label.pack(pady=10)
+
+    upload_button = ttk.Button(root, text="Upload FASTA File", command=upload_file, style="TButton")
+    upload_button.pack(pady=10)
+
+    global result_display
+    result_display = tk.Text(root, wrap=tk.WORD, width=70, height=15, state='disabled', font=("Helvetica", 12))
+    result_display.pack(pady=10)
+
+    sequence_frame = ttk.Frame(root)
+    sequence_frame.pack(pady=10)
+
+    global sequence1_entry
+    global sequence2_entry
+
+    sequence1_label = ttk.Label(sequence_frame, text="Sequence 1:", style="TLabel")
+    sequence1_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+    sequence1_entry = ttk.Entry(sequence_frame, width=40)
+    sequence1_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    sequence2_label = ttk.Label(sequence_frame, text="Sequence 2:", style="TLabel")
+    sequence2_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+
+    sequence2_entry = ttk.Entry(sequence_frame, width=40)
+    sequence2_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    global evolutionary_history_var
+    evolutionary_history_var = tk.BooleanVar()
+
+    evolutionary_history_checkbutton = ttk.Checkbutton(
+        root,
+        text="Analyze Evolutionary History",
+        variable=evolutionary_history_var,
+        style="TButton"
+    )
+    evolutionary_history_checkbutton.pack(pady=10)
+
+    call_variants_button = ttk.Button(root, text="Call Variants", command=call_variants, style="TButton")
+    call_variants_button.pack(pady=10)
+
+    upload_evolution_button = ttk.Button(root, text="Upload and Analyze Evolutionary History", command=upload_and_analyze_evolutionary_history, style="TButton")
+    upload_evolution_button.pack(pady=10)
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
